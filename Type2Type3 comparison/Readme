@@ -1,1 +1,9 @@
+Code for the paper "Are type 3 functional responses just statistical apparitions?" by DeLong et al, in Ecosphere. 
 
+This repository contains two Julia script files to reproduce the analysis comparing type 2 and type 3 functional response models fit to each data set in the FoRAGE database.
+
+The fits themselves are available in the folder level up in this repository, under a folder called "Fits"
+
+The first script does the analysis comparing AIC differences between type 2 and type 3 with a variety of predictor variables and makes plots. This script requires access the FoRAGE database itself. The most recent version of this database is always available at the Knowledge Network for Biodiversity.
+
+The second script produces figure 3 in the manuscript that shows the median delta AIC against the fraction of deltaAICs that support type 3. This script requires access to all the separate fit files.
