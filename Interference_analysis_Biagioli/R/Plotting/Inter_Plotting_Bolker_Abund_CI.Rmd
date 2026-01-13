@@ -1,0 +1,406 @@
+---
+title: "Interference Plotting"
+output: html_document
+---
+
+```{r}
+### LOAD IN PACKAGES
+
+library(tidyverse)
+library(cowplot)
+library(coda)
+library(modelbased)
+library(colorspace)
+library(brms)
+library(ggpubr)
+library(bayesplot)
+library(rlang)
+library(stringr)
+```
+
+```{r}
+### LOAD IN DATA
+load('~/Inter_Regression_fits.RData')
+
+wC_ahR_predict <- read.csv('~/wC_ahR_predict.csv')
+```
+
+//////////////////////////////////////////////////////////////// PLOTTING FUNCTIONS ////////////////////////////////////////////////
+
+```{r}
+################################################################ WITH TEXT ######################################################## 
+
+plot_brms_two_regressions_text <- function(fit1, fit2, data, x_var, y_var, 
+                                      group_var = "Dim",
+                                      x_lab, y_lab,
+                                      label1 = "2D", label2 = "3D",
+                                      color1 = "blue", color2 = "red") {
+  
+  # Helper to get fitted values
+  get_pred_df <- function(fit, data, x_var, label) {
+    newdata <- tibble(!!sym(x_var) := seq(min(data[[x_var]], na.rm = TRUE),
+                                          max(data[[x_var]], na.rm = TRUE),
+                                          length.out = 100))
+    preds <- fitted(fit, newdata = newdata, summary = TRUE)
+    
+    newdata %>%
+      mutate(
+        fit = preds[, "Estimate"],
+        lower = preds[, "Q2.5"],
+        upper = preds[, "Q97.5"],
+        Model = label
+      )
+  }
+  
+  # Helper to extract slope summaries
+  get_param_summary <- function(fit, x_var) {
+    draws <- as_draws_df(fit)
+    param_name <- grep(paste0("^b_", x_var, "$"), names(draws), value = TRUE)
+    if (length(param_name) == 0) {
+      stop(paste("Could not find slope parameter for", x_var, "in model."))
+    }
+    slope_draws <- draws[[param_name]]
+    median <- median(slope_draws)
+    lower <- quantile(slope_draws, 0.025)
+    upper <- quantile(slope_draws, 0.975)
+    list(median = median, lower = lower, upper = upper)
+  }
+  
+  # Predicted data for both fits
+  pred1 <- get_pred_df(fit1, data, x_var, label1)
+  pred2 <- get_pred_df(fit2, data, x_var, label2)
+  plot_data <- bind_rows(pred1, pred2)
+  
+  # Ensure factor levels
+  plot_data <- plot_data %>%
+    mutate(Model = factor(Model, levels = c(label1, label2)))
+  
+  # Colors
+  color_values <- setNames(c(color1, color2), c(label1, label2))
+  
+  # Harmonize data labels
+  data <- data %>%
+    mutate(Model = case_when(
+      !!sym(group_var) %in% c("2", label1) ~ label1,
+      !!sym(group_var) %in% c("3", label2) ~ label2,
+      TRUE ~ as.character(!!sym(group_var))
+    )) %>%
+    mutate(Model = factor(Model, levels = c(label1, label2)))
+  
+  # Extract slope summaries
+  param1 <- get_param_summary(fit1, x_var)
+  param2 <- get_param_summary(fit2, x_var)
+  
+  # Create annotation text
+  text1 <- sprintf("%s: median = %.3f\n95%% CrI = [%.3f, %.3f]", 
+                   label1, param1$median, param1$lower, param1$upper)
+  text2 <- sprintf("%s: median = %.3f\n95%% CrI = [%.3f, %.3f]", 
+                   label2, param2$median, param2$lower, param2$upper)
+  
+  # Create base plot
+  p <- ggplot() +
+    geom_point(data = data,
+               aes(x = !!sym(x_var), y = !!sym(y_var), color = Model),
+               size = 3, alpha = 0.7) +
+    geom_line(data = plot_data,
+              aes(x = !!sym(x_var), y = fit, color = Model, linetype = Model),
+              linewidth = 1.2) +
+    geom_ribbon(data = plot_data,
+                aes(x = !!sym(x_var), ymin = lower, ymax = upper, fill = Model),
+                alpha = 0.2, color = NA) +
+    scale_color_manual(values = color_values) +
+    scale_fill_manual(values = color_values) +
+    xlab(x_lab) + ylab(y_lab) +
+    theme_cowplot(font_size = 30) +
+    theme(legend.title = element_blank())
+  
+  # Add text annotations (positioned using data range)
+  x_pos <- min(data[[x_var]], na.rm = TRUE)
+  y_max <- max(data[[y_var]], na.rm = TRUE)
+  y_range <- diff(range(data[[y_var]], na.rm = TRUE))
+  
+  p +
+    annotate("text", x = x_pos, y = y_max, label = text1,
+             hjust = 0, vjust = 1.2, color = color1, size = 6) +
+    annotate("text", x = x_pos, y = y_max - 0.15 * y_range, label = text2,
+             hjust = 0, vjust = 1.2, color = color2, size = 6)
+}
+
+```
+
+
+```{r}
+################################################################ WITHOUT TEXT ######################################################## 
+
+
+plot_brms_two_regressions <- function(fit1, fit2, data, x_var, y_var, 
+                                      group_var = "Dim", # column in `data` identifying 2D vs 3D
+                                      x_lab, y_lab,
+                                      label1 = "2D", label2 = "3D",
+                                      color1 = "blue", color2 = "red") {
+  
+  # helper to get fitted values
+  get_pred_df <- function(fit, data, x_var, label) {
+    newdata <- tibble(!!sym(x_var) := seq(min(data[[x_var]], na.rm = TRUE),
+                                          max(data[[x_var]], na.rm = TRUE),
+                                          length.out = 100))
+    preds <- fitted(fit, newdata = newdata, summary = TRUE)
+    
+    newdata %>%
+      mutate(
+        fit = preds[, "Estimate"],
+        lower = preds[, "Q2.5"],
+        upper = preds[, "Q97.5"],
+        Model = label
+      )
+  }
+  
+  # get predicted data for both fits
+  pred1 <- get_pred_df(fit1, data, x_var, label1)
+  pred2 <- get_pred_df(fit2, data, x_var, label2)
+  plot_data <- bind_rows(pred1, pred2)
+  
+  # ensure factor levels
+  plot_data <- plot_data %>%
+    mutate(Model = factor(Model, levels = c(label1, label2)))
+  
+  # color mapping for both datasets
+  color_values <- setNames(c(color1, color2), c(label1, label2))
+  
+  # harmonize Model labels in data
+  data <- data %>%
+    mutate(Model = case_when(
+      !!sym(group_var) %in% c("2", label1) ~ label1,
+      !!sym(group_var) %in% c("3", label2) ~ label2,
+      TRUE ~ as.character(!!sym(group_var))
+    )) %>%
+    mutate(Model = factor(Model, levels = c(label1, label2)))
+  
+  # plot — ensure consistent color mapping for all layers
+  ggplot() +
+    # points — use same color scale
+    geom_point(data = data,
+               aes(x = !!sym(x_var), y = !!sym(y_var), color = Model),
+               size = 3, alpha = 0.7) +
+    
+    # regression lines
+    geom_line(data = plot_data,
+              aes(x = !!sym(x_var), y = fit, color = Model, linetype = Model),
+              linewidth = 1.2) +
+    
+    # ribbons
+    geom_ribbon(data = plot_data,
+                aes(x = !!sym(x_var), ymin = lower, ymax = upper, fill = Model),
+                alpha = 0.2, color = NA) +
+    
+    # consistent color/fill scales
+    scale_color_manual(values = color_values) +
+    scale_fill_manual(values = color_values) +
+    
+    xlab(x_lab) + ylab(y_lab) +
+    theme_cowplot(font_size = 30) +
+    theme(legend.title = element_blank())
+}
+```
+
+
+```{r}
+a_w_fullD_plot <- plot_brms_two_regressions_text(
+  fit1 = fit_a_w_2D,
+  fit2 = fit_a_w_3D,
+  data = filter(forage_fits_abun, Dim %in% c(2, 3)),
+  x_var = "log_scaled_a",
+  y_var = "log_fitted_w",
+  group_var = "Dim",          # name of your column identifying 2D vs 3D
+  x_lab = "log(a)",
+  y_lab = "log(w)",
+  label1 = "2D studies",
+  label2 = "3D studies",
+  color1 = "#0084FF",        
+  color2 = "red"
+)
+
+h_w_fullD_plot <- plot_brms_two_regressions_text(
+  fit1 = fit_h_w_2D,
+  fit2 = fit_h_w_3D,
+  data = filter(forage_fits_abun, Dim %in% c(2, 3)),
+  x_var = "log_fitted_h",
+  y_var = "log_fitted_w",
+  group_var = "Dim",          # name of your column identifying 2D vs 3D
+  x_lab = "log(h)",
+  y_lab = "log(w)",
+  label1 = "2D studies",
+  label2 = "3D studies",
+  color1 = "#0084FF",        
+  color2 = "red"
+)
+
+w_prey_mass_fullD_plot <- plot_brms_two_regressions_text(
+  fit1 = fit_w_prey_mass_2D,
+  fit2 = fit_w_prey_mass_3D,
+  data = filter(forage_fits_abun, Dim %in% c(2, 3), !is.na(log_prey_mass)),
+  x_var = "log_prey_mass",
+  y_var = "log_fitted_w",
+  group_var = "Dim",          # name of your column identifying 2D vs 3D
+  x_lab = "log(prey mass (g))",
+  y_lab = "log(w)",
+  label1 = "2D studies",
+  label2 = "3D studies",
+  color1 = "#0084FF",        
+  color2 = "red"
+)
+
+w_pred_mass_fullD_plot <- plot_brms_two_regressions_text(
+  fit1 = fit_w_pred_mass_2D,
+  fit2 = fit_w_pred_mass_3D,
+  data = filter(forage_fits_abun, Dim %in% c(2, 3), !is.na(log_pred_mass)),
+  x_var = "log_pred_mass",
+  y_var = "log_fitted_w",
+  group_var = "Dim",          # name of your column identifying 2D vs 3D
+  x_lab = "log(pred mass (g))",
+  y_lab = "log(w)",
+  label1 = "2D studies",
+  label2 = "3D studies",
+  color1 = "#0084FF",        
+  color2 = "red"       
+)
+```
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////// SUMMARY DISTRIBUTION PLOTTING ////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+```{r}
+plot_posterior <- function(fit, var = NULL, color = "red", ci = 0.95, show_trace = TRUE) {
+  # Capture model object name for labeling
+  fit_name <- deparse(substitute(fit))
+  
+  # Extract posterior draws
+  draws <- as_draws_df(fit)[[var]]
+  
+  # Compute credible interval
+  ci_bounds <- quantile(draws, probs = c((1 - ci)/2, 1 - (1 - ci)/2))
+  
+  # Posterior histogram with CI lines
+  hist_plot <- mcmc_hist(as.matrix(fit, variable = var)) +
+    geom_vline(xintercept = 0, linetype = 2, linewidth = 1.2, alpha = 0.6) +
+    geom_vline(xintercept = ci_bounds[1], linetype = 2, linewidth = 1.2, alpha = 0.4, color = color) +
+    geom_vline(xintercept = ci_bounds[2], linetype = 2, linewidth = 1.2, alpha = 0.4, color = color) +
+    theme_cowplot(font_size = 18) +
+    labs(
+      title = sprintf("%s", fit_name, var),
+      subtitle = sprintf("95%% CI: [%.3f, %.3f]", ci_bounds[1], ci_bounds[2]),
+      x = "Coefficient value",
+      y = "Density"
+    )
+  
+  # Trace plot (optional)
+  if (show_trace) {
+    trace_plot <- mcmc_trace(as.array(fit, variable = var)) +
+      theme_cowplot(font_size = 18)
+    
+    combined <- plot_grid(hist_plot, trace_plot, ncol = 1, rel_heights = c(1, 1))
+    print(combined)
+    return(invisible(combined))
+  } else {
+    print(hist_plot)
+    return(invisible(hist_plot))
+  }
+}
+```
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////// CHANGE IN W WITH CHANGE IN FR PARS ///////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////// A A A ////////////////////////////////////////////////////////////////////
+
+```{r}
+plot_posterior(fit_a_w_2D, "b_log_scaled_a", show_trace = TRUE)
+
+summary(fit_a_w_2D)
+
+```
+
+```{r}
+
+plot_posterior(fit_a_w_3D, "b_log_scaled_a", show_trace = TRUE)
+
+summary(fit_a_w_3D)
+
+```
+
+/////////////////////////////////////////////////////////////////// H H H ////////////////////////////////////////////////////////////////////
+
+
+```{r}
+plot_posterior(fit_h_w_2D, "b_log_fitted_h", show_trace = TRUE)
+
+summary(fit_h_w_2D)
+
+```
+
+```{r}
+
+plot_posterior(fit_h_w_3D, "b_log_fitted_h", show_trace = TRUE)
+
+summary(fit_h_w_3D)
+
+```
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////// CHANGE IN W WITH CHANGE IN PRED AND PREY MASS ////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+```{r}
+### W VS PREY MASS
+
+plot_posterior(fit_w_prey_mass_2D, "b_log_prey_mass", show_trace = TRUE)
+
+summary(fit_w_prey_mass_2D)
+```
+
+```{r}
+plot_posterior(fit_w_prey_mass_3D, "b_log_prey_mass", show_trace = TRUE)
+
+summary(fit_w_prey_mass_3D)
+
+```
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////// CHANGE IN W WITH CHANGE IN PRED MASS /////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+```{r}
+### W VS PRED MASS
+
+plot_posterior(fit_w_pred_mass_2D, "b_log_pred_mass", show_trace = TRUE)
+
+summary(fit_w_pred_mass_2D)
+```
+
+```{r}
+plot_posterior(fit_w_pred_mass_3D, "b_log_pred_mass", show_trace = TRUE)
+
+summary(fit_w_pred_mass_3D)
+
+```
+
+
+```{r}
+w_v_mass_plot <-  ggarrange(w_pred_mass_fullD_plot, w_prey_mass_fullD_plot, ncol = 2, nrow = 1, legend = "bottom", common.legend = TRUE, align = "hv",  labels = "AUTO", font.label = list(size = 35))
+
+w_v_pars_plot <- ggarrange(a_w_fullD_plot, h_w_fullD_plot,  ncol = 2, nrow = 1, legend = "bottom", common.legend = TRUE, align = "hv", labels = "AUTO", font.label = list(size = 35))
+
+```
+
+
+```{r}
+ggsave("~/w_v_mass_plot_Bolker.png", w_v_mass_plot, width = 16, height = 8, dpi = 300)
+
+ggsave("~/w_v_pars_plot_Bolker.png", w_v_pars_plot, width = 16, height = 8, dpi = 300)
+```
+

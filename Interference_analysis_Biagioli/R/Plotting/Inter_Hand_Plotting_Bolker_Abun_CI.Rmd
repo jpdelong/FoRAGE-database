@@ -1,0 +1,278 @@
+---
+title: "Interference Plotting"
+output: html_document
+---
+
+```{r}
+### LOAD IN PACKAGES
+
+library(tidyverse)
+library(cowplot)
+library(coda)
+library(modelbased)
+library(colorspace)
+library(brms)
+library(ggpubr)
+library(bayesplot)
+library(rlang)
+library(stringr)
+```
+
+```{r}
+### LOAD IN DATA
+load('~/Inter_Regression_fits.RData')
+
+wC_ahR_predict <- read.csv('~/wC_ahR_predict.csv')
+
+w_ah_post <- read.csv("~/w_ah_post.csv")
+
+```
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////// Plotting wC/ahR Values ////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+```{r}
+# Rank C/R by study
+forage_fits_abun_plot <- forage_fits_abun %>%
+  arrange(log_C_R_50) %>%
+  mutate(
+    Inter_ID_ord = factor(Inter_ID, levels = Inter_ID)
+  )
+```
+
+```{r}
+#add NAs for stuidies that do not have masses in FoRAGE
+forage_fits_abun_plot <- forage_fits_abun_plot %>%
+  mutate(
+    log_wC_ahR_50 = ifelse(Inter_ID %in% c(14, 25), NA, log_wC_ahR_50),
+    log_wC_ahR_25 = ifelse(Inter_ID %in% c(14, 25), NA, log_wC_ahR_25),
+    log_wC_ahR_75 = ifelse(Inter_ID %in% c(14, 25), NA, log_wC_ahR_75),
+    log_wC_ahR_5  = ifelse(Inter_ID %in% c(14, 25), NA, log_wC_ahR_5),
+    log_wC_ahR_95 = ifelse(Inter_ID %in% c(14, 25), NA, log_wC_ahR_95)
+  )
+```
+
+```{r}
+# Find last study with log(C/R) < 0
+crossover_index <- max(
+  which(!is.na(forage_fits_abun_plot$log_C_R_50) &
+        forage_fits_abun_plot$log_C_R_50 < 0)
+)
+
+crossover_y <- crossover_index + 0.5
+```
+
+```{r}
+#Set x lims for wC/ahR plot
+xlims_wC_ahR <- c(-11, 11)
+```
+
+```{r}
+#Make forest Plot
+wC_ahR_rank_plot <- ggplot(forage_fits_abun_plot,
+       aes(y = Inter_ID_ord, x = log_wC_ahR_50)) +
+
+  # 10–90% CI
+  geom_segment(aes(
+    x = log_wC_ahR_5,
+    xend = log_wC_ahR_95,
+    yend = Inter_ID_ord
+  ),
+  linewidth = 0.8,
+  alpha = 0.6) +
+
+  # 25–75% CI rectangle
+  geom_rect(aes(
+    ymin = as.numeric(Inter_ID_ord) - 0.35,
+    ymax = as.numeric(Inter_ID_ord) + 0.35,
+    xmin = log_wC_ahR_25,
+    xmax = log_wC_ahR_75
+  ),
+  fill = "darkgrey",
+  alpha = 0.8,
+  inherit.aes = FALSE) +
+
+  # Median
+  geom_point(size = 2.5) +
+
+  # Vertical reference: wC/ahR = 1
+  geom_vline(xintercept = 0, linetype = 2, linewidth = 2, alpha = 0.8) +
+
+  # Horizontal crossover line: C/R = 1
+  geom_hline(
+    yintercept = crossover_y,
+    linetype = 2,
+    linewidth = 2,
+    alpha = 0.8
+  ) +
+
+  labs(
+    #y = "Studies Ranked by Median log(C/R)",
+    y= NULL,
+    x = "log(wC/ahR)"
+    
+  ) +
+  scale_x_continuous(limits = xlims_wC_ahR) +
+  theme_cowplot(font_size = 40)
+
+
+```
+
+```{r}
+#summary data from Forest plot
+
+summary_IQR_wC_ahR <- forage_fits_abun_plot %>%
+  summarise(
+    n_studies = n(),
+    n_median_greater_0 = sum(log_wC_ahR_50 > 0),
+    n_50CI_no_overlap_0 = sum(log_wC_ahR_25 > 0 & log_wC_ahR_75 > 0),
+    n_90CI_no_overlap_0 = sum(log_wC_ahR_5 > 0 & log_wC_ahR_95 > 0),
+    
+    percent_median_greater_0 = 100 * mean(log_wC_ahR_50 > 0),
+    percent_50CI_no_overlap_0 = 100 * mean(log_wC_ahR_25 > 0 & log_wC_ahR_75 > 0),
+    percent_90CI_no_overlap_0 = 100 * mean(log_wC_ahR_5 > 0 & log_wC_ahR_95 > 0)
+  )
+
+```
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////// Plotting w/ah Values ////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+```{r}
+Inter_ID <- w_ah_post[, 1]
+w_ah_draws <- w_ah_post[, -1]   # rows = studies, cols = iterations
+
+```
+
+```{r}
+forage_fits_wah <- data.frame(
+  Inter_ID = Inter_ID,
+  log_w_ah_5 = apply(log(w_ah_draws), 1, quantile, probs = 0.05, na.rm = TRUE),
+  log_w_ah_25 = apply(log(w_ah_draws), 1, quantile, probs = 0.25, na.rm = TRUE),
+  log_w_ah_50 = apply(log(w_ah_draws), 1, quantile, probs = 0.50, na.rm = TRUE),
+  log_w_ah_75 = apply(log(w_ah_draws), 1, quantile, probs = 0.75, na.rm = TRUE),
+  log_w_ah_95 = apply(log(w_ah_draws), 1, quantile, probs = 0.95, na.rm = TRUE)
+)
+
+```
+
+
+```{r}
+forage_fits_wah_CR <- forage_fits_wah %>%
+  left_join(
+    forage_fits_abun %>% 
+      select(Inter_ID, log_C_R_50),
+    by = "Inter_ID"
+  )
+
+```
+
+```{r}
+forage_fits_wah_plot <- forage_fits_wah_CR %>%
+  filter(!Inter_ID %in% c(15, 38)) %>% 
+  arrange(log_C_R_50) %>%
+  mutate(
+    Inter_ID_ord = factor(Inter_ID, levels = Inter_ID)
+  )
+
+```
+
+```{r}
+crossover_index <- max(
+  which(forage_fits_wah_plot$log_C_R_50 < 0)
+)
+
+crossover_y <- crossover_index + 0.5
+```
+
+```{r}
+#Set x lims for w/ah plot
+xlims_wah <- c(-3.5, 12.5)
+```
+
+```{r}
+w_ah_rank_plot <- ggplot(
+  forage_fits_wah_plot,
+  aes(y = Inter_ID_ord, x = log_w_ah_50)
+) +
+
+  geom_segment(aes(
+    x = log_w_ah_5,
+    xend = log_w_ah_95,
+    yend = Inter_ID_ord
+  ),
+  linewidth = 0.8,
+  alpha = 0.6) +
+
+  geom_rect(aes(
+    ymin = as.numeric(Inter_ID_ord) - 0.35,
+    ymax = as.numeric(Inter_ID_ord) + 0.35,
+    xmin = log_w_ah_25,
+    xmax = log_w_ah_75
+  ),
+  fill = "darkgrey",
+  alpha = 0.8,
+  inherit.aes = FALSE) +
+
+  geom_point(size = 2.5) +
+
+  geom_vline(xintercept = 0, linetype = 2, linewidth = 2, alpha = 0.8) +
+
+  geom_hline(
+    yintercept = crossover_y,
+    linetype = 2,
+    linewidth = 2,
+    alpha = 0.8
+  ) +
+
+  scale_x_continuous(
+    limits = xlims_wah,
+    expand = c(0, 0)
+  ) +
+
+  labs(
+    y = "Studies Ranked by Median log(C/R)",
+    x = "log(w/ah)"
+  ) +
+  theme_cowplot(font_size = 40)
+```
+
+```{r}
+summary_IQR_w_ah <- forage_fits_wah_plot %>%
+  summarise(
+    n_studies = n(),
+
+    # Medians
+    n_median_greater_0 = sum(log_w_ah_50 > 0),
+    percent_median_greater_0 = 100 * mean(log_w_ah_50 > 0),
+
+    # 50% credible interval (IQR)
+    n_50CI_no_overlap_0 = sum(log_w_ah_25 > 0 & log_w_ah_75 > 0),
+    percent_50CI_no_overlap_0 = 100 * mean(log_w_ah_25 > 0 & log_w_ah_75 > 0),
+
+    # 80% credible interval (10–90%)
+    n_90CI_no_overlap_0 = sum(log_w_ah_5 > 0 & log_w_ah_95 > 0),
+    percent_90CI_no_overlap_0 = 100 * mean(log_w_ah_5 > 0 & log_w_ah_95 > 0)
+  )
+
+```
+
+```{r}
+forrest_plot_full <- ggarrange(w_ah_rank_plot,
+                               wC_ahR_rank_plot,
+                               ncol = 2,
+                               nrow = 1,
+                               align = "v",
+                               axis = "lr",
+                               labels = "AUTO", 
+                               font.label = list(size = 35))
+```
+
+
+```{r}
+ggsave("~/Figures/forrest_plot_full.png", forrest_plot_full[1], width = 20, height = 20, dpi = 300)
+```
+
+
