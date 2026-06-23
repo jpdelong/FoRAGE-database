@@ -25,13 +25,13 @@ end
 
 # MODEL 6 - type 3 refuge model, modified from RPE
 @model function fun_res_RPE_REF(prey_offered,prey_eaten,starting_a,max_a,starting_h) 
-    a ~ truncated(Normal(starting_a[1],10*starting_a[1]),0,20) # space clearance rate
+    a ~ truncated(Normal(starting_a,10*starting_a),0,20) # space clearance rate
     h ~ truncated(Normal(starting_h,10*starting_h),0,2) # handling time
-    k ~ truncated(Normal(0,0.1*maximum(prey_offered)),0,maximum(prey_offered)) # refuge size
+    k ~ Normal(0,0.1*maximum(prey_offered)) # refuge size
 	#σ ~ LogNormal(1,2)
     σ ~ InverseGamma(2,3)
     for i in 1:length(prey_eaten)
-        prey_eaten[i] ~ truncated(Normal((prey_offered[i]-k)-lambertw(a*h*(prey_offered[i]-k)*exp(-a*(6-h*(prey_offered[i]-k))))/(a*h),σ),0,maximum(prey_eaten))
+        prey_eaten[i] ~ truncated(Normal((prey_offered[i]-k)-lambertw(a*h*(prey_offered[i]-k)*exp(-a*(0.5-h*(prey_offered[i]-k))))/(a*h),σ),0,maximum(prey_eaten))
 	end
 end
 
@@ -49,12 +49,16 @@ end
 end=#
 
 
-
+########################################################################
 # use a common prior from empirical starting points
     max_a = maximum(df_data.eaten./df_data.Density)
     starting_a = 0.5*max_a
     starting_h = 1/maximum(df_data.eaten)
-    
+
+# open an empty vector to log refuge model zero-crossing of k (= p value)
+    k_crossing_zero = zeros(Float64,4)
+
+########################################################################
 # loop over the experiments
 for i = 1:length(exps)
     which_exp = exps[i]
@@ -63,11 +67,7 @@ for i = 1:length(exps)
     prey_eaten = df_data.eaten[indices]
     prey_offered = df_data.Density[indices]
 
-    # pull starting values from dataset
-    #max_a = maximum(prey_eaten./prey_offered)
-    #starting_a = 0.5*max_a
-    #starting_h = 1/maximum(prey_eaten)
-
+    ######################################
     # set up model object for type 2
     model_type2 = fun_res_RPE(prey_offered,prey_eaten,starting_a,max_a,starting_h)
 
@@ -82,12 +82,41 @@ for i = 1:length(exps)
     4)
 
     serialize(string("chain-file_DS_",string(i),"type2.jls"), fr_chain_type2)
+
+    ######################################
+    # set up model object for type 3, refuge model
+
+    # set new starting values from the type 2 fit
+    fitted_params_type2 = DataFrame(summarystats(fr_chain_type2))
+    starting_a = fitted_params_type2[1,2]
+    starting_h = fitted_params_type2[2,2]
+
+    model_type3_ref = fun_res_RPE_REF(prey_offered,prey_eaten,starting_a,max_a,starting_h)
+
+    # call the fitting for refuge type 3
+    fr_chain_type3_ref = sample(
+        model_type3_ref,
+        NUTS(30000,0.85),
+        MCMCSerial(),
+        chain_type=MCMCChains.Chains,
+        3000,
+        init_params = [(starting_a,starting_h,0.0001*maximum(prey_offered),10)],
+        4)
+
+    serialize(string("chain-file_DS_",string(i),"type3_ref.jls"), fr_chain_type3_ref)
+
+    # find the quantile for the number of chain samples that are negative
+    my_ecdf = ecdf(fr_chain_type3_ref[:k][:])
+    k_crossing_zero[i] = my_ecdf(0.0)
+
 end
 
 restored_chain = deserialize("chain-file_DS_4type2.jls")
 plot(restored_chain)
 summarystats(restored_chain)
 
+describe(fr_chain_type3_ref)
+plot(fr_chain_type3_ref)
 
 
 
