@@ -14,7 +14,7 @@ gradient = cgrad(:berlin,9,categorical = true) # create a color gradient
 subcolors = [1,2,8,9]
 
 df_data = CSV.read("copepods.csv",DataFrame)
-exp_labels = ["No 26C","Yes 26C","No 20C","Yes 20C"]
+exp_labels = ["No cue; 26C","Cue; 26C","No cue; 20C","Cue; 20C"]
 
 # make a collection of x ranges for the different prey types
 xrange = collect(range(0.0, 40, length=50))
