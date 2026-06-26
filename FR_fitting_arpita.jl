@@ -120,10 +120,6 @@ plot(fr_chain_type3_ref)
 
 
 
-    # set new starting values from the type 2 fit
-    #starting_a = fitted_params_type2[1,2]
-    #starting_h = fitted_params_type2[2,2]
-
     # set up model object for type 3, asymptotic a model
     #model_type3_aa = fun_res_RPE_AA(prey_offered,prey_eaten,starting_a,max_a,starting_h)
 
@@ -147,17 +143,7 @@ plot(fr_chain_type3_ref)
         fitted_r_asym[i] = fitted_params_type3[3,2]
         #fitted_σ_asym = fitted_params_type3[4,2]        
 
-    # set up model object for type 3, refuge model
-    model_type3_ref = fun_res_RPE_REF(prey_offered,prey_eaten,starting_a,max_a,starting_h)
 
-    # call the fitting for refuge type 3
-    fr_chain_type3_ref = sample(
-        model_type3_ref,
-        NUTS(5000,0.65),
-        MCMCSerial(),
-        4000,
-        init_params = [(starting_a,starting_h,0.0001*maximum(prey_offered),10)],
-        1)
         # put fitted parameters into a dataframe
         fitted_params_type3 = DataFrame(summarystats(fr_chain_type3_ref))
         # error check - if posterior has no variation, don't run loo step
@@ -199,12 +185,6 @@ CSV.write("Fitted_params_and_LOO.csv",df)
 #writeout = [fitted_a_type2',fitted_h_type2']
 #CSV.write("a_and_h.csv",Tables.table(fitted_a_type2'))
 #CSV.write("r.csv",Tables.table(fitted_r_ref'))
-
-# make a collection of x ranges for the different prey types
-xrange = collect(range(0.0, 40, length=50))
-
-
-figure1 = plot_fr_fit_multiple_curves(chain_a,chain_h,exps,colors_to_use)
 
 
 # random predator equation plots

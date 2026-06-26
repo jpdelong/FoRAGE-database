@@ -15,7 +15,7 @@ subcolors = [1,2,8,9]
 
 df_data = CSV.read("copepods.csv",DataFrame)
 exp_labels = ["No cue; 26C","Cue; 26C","No cue; 20C","Cue; 20C"]
-
+panel_labels = ["A","B","C","D"]
 # make a collection of x ranges for the different prey types
 xrange = collect(range(0.0, 40, length=50))
 
@@ -79,15 +79,10 @@ for i in eachindex(exps)
     mean_a = fitted_params[1,2]
     mean_h = fitted_params[2,2]
 
+    # add a black line on top for the mean fit
     y = xrange .- lambertw.(mean_a .* mean_h .* xrange .* exp.(-mean_a .* (0.5 .- mean_h .* xrange))) ./ (mean_a * mean_h)
     plot!(xrange, y,
         label=exp_labels[i],
-        color=gradient[subcolors[i]],
-        linewidth=2)
-
-    # add a black line on top
-    plot!(xrange, y,
-        label="",
         color=:black,
         linestyle=:dash,
         linewidth=2)
@@ -98,17 +93,25 @@ for i in eachindex(exps)
         markercolor=gradient[subcolors[i]],
         markersize=4)
 
+    # put a letter on each panel
+    annotate!(2, 22, panel_labels[i])
+
     # plot the posteriors on the post canvas
         density!(allPlots_post[1], chain_of_a, label=exp_labels[i], color=gradient[subcolors[i]], linewidth = 2)
         density!(allPlots_post[2], chain_of_h, label=exp_labels[i], color=gradient[subcolors[i]], linewidth = 2)
 
 end
 
+    # add A and B labels to the posterior plots
+    annotate!(allPlots_post[1], 7, 0.4, "A")
+    annotate!(allPlots_post[2], 0.04, 82, "B")
+
 ########################################################################
 # Now bring the panels together
 ########################################################################
 
-figure_fits = plot(allPlots[1],allPlots[4],allPlots[2],allPlots[3], layout=(2,2), size=(500,600), dpi=1000)
+figure_fits = plot(allPlots[1],allPlots[3],allPlots[2],allPlots[4], layout=(2,2), size=(500,600), dpi=1000,
+    bottom_margin = 5Plots.mm)
 savefig(figure_fits,"FR_fits_copepods.png")
 
 figure_posteriors = plot(allPlots_post[1],allPlots_post[2])
