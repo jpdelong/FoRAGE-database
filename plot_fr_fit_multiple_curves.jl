@@ -1,5 +1,6 @@
 
 using StatsPlots
+using StatsBase
 using Distributions
 using Random
 using MCMCChains
@@ -24,6 +25,9 @@ allPlots = Array{Plots.Plot{Plots.GRBackend},1}(undef,4)
 allPlots_post = Array{Plots.Plot{Plots.GRBackend},1}(undef,2)
 
 include("plot_priors.jl")
+
+prey_eaten = df_data.eaten
+prey_offered = df_data.Density
 figure1 = plot_priors(allPlots_post,prey_offered,prey_eaten)
 
 ########################################################################
@@ -76,11 +80,11 @@ for i in eachindex(exps)
     fitted_params = DataFrame(summarystats(restored_chain))
 
     # put the mean fit on top of this
-    mean_a = fitted_params[1,2]
-    mean_h = fitted_params[2,2]
+    median_a = fitted_params[1,2]
+    median_h = fitted_params[2,2]
 
     # add a black line on top for the mean fit
-    y = xrange .- lambertw.(mean_a .* mean_h .* xrange .* exp.(-mean_a .* (0.5 .- mean_h .* xrange))) ./ (mean_a * mean_h)
+    y = xrange .- lambertw.(median_a .* median_h .* xrange .* exp.(-median_a .* (0.5 .- median_h .* xrange))) ./ (median_a * median_h)
     plot!(xrange, y,
         label=exp_labels[i],
         color=:black,
@@ -96,7 +100,9 @@ for i in eachindex(exps)
     # put a letter on each panel
     annotate!(2, 22, panel_labels[i])
 
-    # plot the posteriors on the post canvas
+    # plot the posteriors on the post canvasm but resample with more
+        chain_of_a = sample(restored_chain["a"],1000)
+        chain_of_h = sample(restored_chain["h"],1000)
         density!(allPlots_post[1], chain_of_a, label=exp_labels[i], color=gradient[subcolors[i]], linewidth = 2)
         density!(allPlots_post[2], chain_of_h, label=exp_labels[i], color=gradient[subcolors[i]], linewidth = 2)
 
@@ -110,7 +116,7 @@ end
 # Now bring the panels together
 ########################################################################
 
-figure_fits = plot(allPlots[1],allPlots[3],allPlots[2],allPlots[4], layout=(2,2), size=(500,600), dpi=1000,
+figure_fits = plot(allPlots[1],allPlots[3],allPlots[2],allPlots[4], layout=(2,2), size=(600,500), dpi=1000,
     bottom_margin = 5Plots.mm)
 savefig(figure_fits,"FR_fits_copepods.png")
 

@@ -12,26 +12,34 @@ using Serialization
 df_data = CSV.read("copepods.csv",DataFrame)
 exps = unique(df_data.Experiment)
 
-# MODEL 2 - Rogers random predator
-@model function fun_res_RPE(prey_offered,prey_eaten,starting_a,max_a,starting_h) 
-    #a ~ LogNormal(log(max_a) - (0.5^2) / 2, 2*starting_a) # space clearance rate
+# MODEL 1 - Rogers random predator
+@model function fun_res_RPE(prey_offered,prey_eaten,starting_a,max_a,starting_h)
+
+    # set up the priors
     a ~ truncated(Normal(starting_a,10*starting_a),0,20) # space clearance rate
     h ~ truncated(Normal(starting_h,10*starting_h),0,2) # handling time
     σ ~ InverseGamma(2,3)
+
+    # construct the likelihood function by iterating over the data 
     for i in 1:length(prey_eaten)
-        prey_eaten[i] ~ truncated(Normal(prey_offered[i]-lambertw(a*h*prey_offered[i]*exp(-a*(0.5-h*prey_offered[i])))/(a*h),σ),0,maximum(prey_eaten))
+        predicted = prey_offered[i]-lambertw(a*h*prey_offered[i]*exp(-a*(0.5-h*prey_offered[i])))/(a*h)
+        prey_eaten[i] ~ truncated(Normal(predicted,sqrt(σ^2*prey_eaten[i])),0,maximum(prey_eaten))
 	end
 end
 
-# MODEL 6 - type 3 refuge model, modified from RPE
-@model function fun_res_RPE_REF(prey_offered,prey_eaten,starting_a,max_a,starting_h) 
+# MODEL 2 - type 3 refuge model, modified from RPE
+@model function fun_res_RPE_REF(prey_offered,prey_eaten,starting_a,max_a,starting_h)
+
+    # set up the priors
     a ~ truncated(Normal(starting_a,10*starting_a),0,20) # space clearance rate
     h ~ truncated(Normal(starting_h,10*starting_h),0,2) # handling time
     k ~ Normal(0,0.1*maximum(prey_offered)) # refuge size
-	#σ ~ LogNormal(1,2)
     σ ~ InverseGamma(2,3)
+
+    # construct the likelihood function by iterating over the data 
     for i in 1:length(prey_eaten)
-        prey_eaten[i] ~ truncated(Normal((prey_offered[i]-k)-lambertw(a*h*(prey_offered[i]-k)*exp(-a*(0.5-h*(prey_offered[i]-k))))/(a*h),σ),0,maximum(prey_eaten))
+        predicted = (prey_offered[i]-k)-lambertw(a*h*(prey_offered[i]-k)*exp(-a*(0.5-h*(prey_offered[i]-k))))/(a*h)
+        prey_eaten[i] ~ truncated(Normal(predicted,sqrt(σ^2*prey_eaten[i])),0,maximum(prey_eaten))
 	end
 end
 
@@ -57,7 +65,8 @@ end=#
 
 # open an empty vector to log refuge model zero-crossing of k (= p value)
     k_crossing_zero = zeros(Float64,4)
-
+# open an empty vector to log parameters
+    table_output = zeros(Float64,4,9)
 ########################################################################
 # loop over the experiments
 for i = 1:length(exps)
@@ -78,7 +87,7 @@ for i = 1:length(exps)
     MCMCSerial(),
     chain_type=MCMCChains.Chains,
     3000,
-    init_params = [(starting_a,starting_h,0.1)],
+    init_params = [(starting_a,starting_h,10)],
     4)
 
     serialize(string("chain-file_DS_",string(i),"type2.jls"), fr_chain_type2)
@@ -88,6 +97,13 @@ for i = 1:length(exps)
 
     # set new starting values from the type 2 fit
     fitted_params_type2 = DataFrame(summarystats(fr_chain_type2))
+
+    # log parameter estimates 
+    summ = DataFrame(summarystats(fr_chain_type2))
+    hidinterval = hpd(fr_chain_type2, alpha=0.05)
+    table_output[i,1:6] = round.([summ[1,2] hidinterval[1,2:3] summ[2,2] hidinterval[2,2:3]],digits=3)
+
+    # grab new starting values
     starting_a = fitted_params_type2[1,2]
     starting_h = fitted_params_type2[2,2]
 
@@ -105,15 +121,20 @@ for i = 1:length(exps)
 
     serialize(string("chain-file_DS_",string(i),"type3_ref.jls"), fr_chain_type3_ref)
 
+    summ = DataFrame(summarystats(fr_chain_type3_ref))
+    hidinterval = hpd(fr_chain_type3_ref, alpha=0.05)
+    table_output[i,7:9] = round.([summ[3,2] hidinterval[3,2:3]],digits=3)
+
     # find the quantile for the number of chain samples that are negative
     my_ecdf = ecdf(fr_chain_type3_ref[:k][:])
     k_crossing_zero[i] = my_ecdf(0.0)
 
 end
 
-restored_chain = deserialize("chain-file_DS_4type2.jls")
+restored_chain = deserialize("chain-file_DS_1type2.jls")
 plot(restored_chain)
-summarystats(restored_chain)
+DataFrame(summarystats(restored_chain))
+
 
 describe(fr_chain_type3_ref)
 plot(fr_chain_type3_ref)
