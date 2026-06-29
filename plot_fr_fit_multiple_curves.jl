@@ -58,8 +58,8 @@ for i in eachindex(exps)
     restored_chain = deserialize(string("chain-file_DS_",string(i),"type2.jls"))
 
     # pull out a sample of the specific parameter chains
-    chain_of_a = sample(restored_chain["a"],100)
-    chain_of_h = sample(restored_chain["h"],100)
+    chain_of_a = sample(restored_chain["a"],500)
+    chain_of_h = sample(restored_chain["h"],500)
 
     if i ==3 
         chain_of_h_no = chain_of_h
@@ -101,8 +101,8 @@ for i in eachindex(exps)
     annotate!(2, 22, panel_labels[i])
 
     # plot the posteriors on the post canvasm but resample with more
-        chain_of_a = sample(restored_chain["a"],1000)
-        chain_of_h = sample(restored_chain["h"],1000)
+        chain_of_a = sample(restored_chain["a"],2000)
+        chain_of_h = sample(restored_chain["h"],2000)
         density!(allPlots_post[1], chain_of_a, label=exp_labels[i], color=gradient[subcolors[i]], linewidth = 2)
         density!(allPlots_post[2], chain_of_h, label=exp_labels[i], color=gradient[subcolors[i]], linewidth = 2)
 
